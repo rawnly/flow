@@ -71,6 +71,19 @@ Tip: label nodes as `id["Title<br/>subtitle"]` for the two-line style. The viewe
 
 **No overwrites:** if the agent saves while you edit, you're warned before replacing it. If you edited since the agent last looked, its `update_diagram` is refused with your current source, so it builds on your edit.
 
+## Closing the loop without pi
+
+Outside pi, nothing pushes viewer comments into the conversation, so there are two opt-in ways to get them back to the agent:
+
+- **`wait_for_feedback` tool (any MCP client).** Blocks until the human leaves feedback (default 50s, max 600s), then returns it. The agent loops: update, wait, address, `resolve_feedback`, wait. Works in Codex and anything else that speaks MCP.
+- **Claude Code hooks.** `flow-hook` reads open feedback from `FLOW_DIR` (default `<cwd>/.flow`). On `UserPromptSubmit` it adds the feedback to your prompt; on `Stop` it blocks the agent from finishing while feedback is open (once per turn, so an unresolved item can't loop forever). Print the settings to paste into `.claude/settings.json`:
+
+  ```sh
+  npx -y -p @rawnly/flow flow-hook --print
+  ```
+
+Hooks can't wake an idle session; they fire when you prompt or when the agent is about to stop.
+
 ## Pi extension extras
 
 On top of the tools, the pi extension:
@@ -97,3 +110,7 @@ Use your local build instead of the package:
 claude mcp add flow -- node "$PWD/dist/server/mcp.js"
 pi install /path/to/flow     # or: pi -e /path/to/flow/pi/extension.ts
 ```
+
+`npx -p @rawnly/flow flow-mcp` fails with `flow-mcp: command not found` inside this repo: npx resolves the package to the local project (same name) and doesn't put a project's own `bin` on PATH. Run it from another directory, or use `npm run mcp` / `npm link` here.
+
+Release: bump first (`npm version patch`), then `npm publish`; `prepublishOnly` builds. A version can't be republished.

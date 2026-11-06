@@ -2,6 +2,9 @@ import { z } from "zod";
 import { addRevision, createDiagram, getDiagram, listDiagrams, setFeedbackStatus, type Diagram } from "./store.js";
 import { validateMermaid } from "./validate.js";
 import { viewerUrl } from "./http.js";
+import { formatFeedback, openFeedback, sourceBlock, waitForFeedback } from "./feedback.js";
+
+export { formatFeedback, sourceBlock };
 
 export type ToolResult = { text: string; isError?: boolean; diagramId?: string };
 export type FlowTool = {
@@ -25,29 +28,11 @@ const fail = (text: string): ToolResult => ({ text, isError: true });
 
 const STYLE_HINT = `Style: one node per component with a short bold title and an optional subtitle on a second line, e.g. A["Worker<br/>rate bound, daily cap"]. The viewer highlights what changed since the previous revision automatically; do not add your own colors or classDefs.`;
 
-const openFeedback = (d: Diagram) => d.feedback.filter((f) => f.status === "open");
-
 export const summary = (d: Diagram) => {
   const r = d.revisions.at(-1)!;
   const open = openFeedback(d).length;
   return `"${d.title}" (id: ${d.id}) is at revision ${r.n}. ${open} open feedback item${open === 1 ? "" : "s"}. Viewer: ${viewerUrl(d.id)}`;
 };
-
-export const formatFeedback = (items: Diagram["feedback"]) =>
-  items
-    .map(
-      (f) =>
-        `- [${f.id}] ${f.status === "open" ? "OPEN" : `resolved in r${f.resolvedIn}`} · ${
-          f.kind === "edit"
-            ? `the user edited the diagram themselves in r${f.revision} and asks you to adjust around it`
-            : f.nodeId
-              ? `node "${f.nodeId}"${f.nodeLabel ? ` (${f.nodeLabel})` : ""}`
-              : "whole diagram"
-        } · on r${f.revision}\n  ${f.text.replace(/\n/g, "\n  ")}`,
-    )
-    .join("\n");
-
-export const sourceBlock = (source: string) => "```mermaid\n" + source.trimEnd() + "\n```";
 
 export const tools: FlowTool[] = [
   {
@@ -132,6 +117,23 @@ export const tools: FlowTool[] = [
       if (!items.some((f) => f.kind === "edit")) return ok(formatFeedback(items), id);
       markSeen(session, id, latest.n);
       return ok(`${formatFeedback(items)}\n\nCurrent source (r${latest.n}, by ${latest.author}):\n${sourceBlock(latest.source)}`, id);
+    },
+  },
+  {
+    name: "wait_for_feedback",
+    description:
+      "Block until the human leaves feedback in the Flow viewer, then return it (same format as get_feedback). Use it after create_diagram/update_diagram to keep iterating without the user having to prompt you: wait, address the feedback, resolve_feedback, wait again. Returns 'No new feedback' on timeout; call it again to keep waiting, or stop if the user seems done.",
+    shape: {
+      id: z.string().optional().describe("Only wait on this diagram (default: any)"),
+      timeoutSec: z.number().int().min(1).max(600).optional().describe("Max seconds to wait (default 50)"),
+    },
+    async run({ id, timeoutSec }, _author, session) {
+      const report = await waitForFeedback((timeoutSec ?? 50) * 1000, id);
+      if (!report) return ok(`No new feedback after ${timeoutSec ?? 50}s. Call wait_for_feedback again to keep waiting.`);
+      // Edit-kind feedback ships the current source; mark it seen so the follow-up update isn't refused.
+      const all = id ? [await getDiagram(id)] : await listDiagrams();
+      for (const d of all) if (d) markSeen(session, d.id, d.revisions.at(-1)!.n);
+      return ok(report, id);
     },
   },
   {

@@ -3,12 +3,13 @@
   "version": "0.1.0",
   "type": "module",
   "bin": {
-    "flow-mcp": "dist/server/mcp.js"
+    "flow-mcp": "dist/server/mcp.js",
+    "flow-hook": "dist/server/hook.js"
   },
   "scripts": {
     "dev": "vite",
     "dev:server": "FLOW_DIR=.flow bun --watch src/server/http.ts",
-    "build": "vite build && bun build src/server/mcp.ts src/server/http.ts --target node --packages external --outdir dist/server",
+    "build": "vite build && bun build src/server/mcp.ts src/server/http.ts src/server/hook.ts --target node --packages external --outdir dist/server",
     "mcp": "node dist/server/mcp.js",
     "seed": "FLOW_DIR=.flow bun scripts/seed.ts",
     "test": "bun test",
