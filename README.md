@@ -12,13 +12,41 @@ Requires Node 20+.
 pi install npm:@rawnly/flow
 ```
 
-### Any MCP client
+### Claude Code
 
 ```sh
 claude mcp add flow -- npx -y -p @rawnly/flow flow-mcp
 ```
 
-Or in your client's config (`.mcp.json`, `mcp.json`, ...):
+Add `--scope project` to write it to the repo's `.mcp.json` instead of your user config. To get viewer comments back into the conversation automatically, also install the hooks (see [Closing the loop without pi](#closing-the-loop-without-pi)):
+
+```sh
+npx -y -p @rawnly/flow flow-hook --print   # paste into .claude/settings.json
+```
+
+### Codex
+
+```sh
+codex mcp add flow -- npx -y -p @rawnly/flow flow-mcp
+```
+
+Or in `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.flow]
+command = "npx"
+args = ["-y", "-p", "@rawnly/flow", "flow-mcp"]
+
+[mcp_servers.flow.env]
+FLOW_DIR = ".flow"
+FLOW_AGENT_NAME = "codex"
+```
+
+Codex has no hooks, so use the `wait_for_feedback` tool to receive comments (see below).
+
+### Any other MCP client
+
+Add this to your client's config (`.mcp.json`, `mcp.json`, ...):
 
 ```json
 {
@@ -55,6 +83,7 @@ All optional, set as environment variables.
 | `update_diagram` | New revision (full source). |
 | `list_diagrams` / `get_diagram` | Read diagrams, any revision, history. |
 | `get_feedback` | Human comments, each anchored to a node id. |
+| `wait_for_feedback` | Block until the human leaves feedback, then return it. |
 | `resolve_feedback` | Mark a comment fixed, with a reply. |
 
 Tip: label nodes as `id["Title<br/>subtitle"]` for the two-line style. The viewer highlights what changed since the previous revision on its own.
