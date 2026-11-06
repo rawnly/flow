@@ -8,11 +8,11 @@
   },
   "scripts": {
     "dev": "vite",
-    "dev:server": "FLOW_DIR=.flow tsx watch src/server/http.ts",
-    "build": "vite build && tsc -p tsconfig.server.json",
+    "dev:server": "FLOW_DIR=.flow bun --watch src/server/http.ts",
+    "build": "vite build && bun build src/server/mcp.ts src/server/http.ts --target node --packages external --outdir dist/server",
     "mcp": "node dist/server/mcp.js",
-    "seed": "FLOW_DIR=.flow tsx scripts/seed.ts",
-    "test": "tsx --test src/server/*.test.ts",
+    "seed": "FLOW_DIR=.flow bun scripts/seed.ts",
+    "test": "bun test",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.server.json"
   },
   "dependencies": {
@@ -28,15 +28,21 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@types/bun": "^1.4.4",
     "@types/node": "^26.6.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.2.1",
-    "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vite": "^8.3.6"
   },
   "allowScripts": {
     "esbuild@0.28.2": true
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
   }
 }

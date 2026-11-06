@@ -18,7 +18,7 @@ export const HOST = "127.0.0.1";
 export const viewerUrl = (id?: string) => `http://${HOST}:${PORT}/${id ? `#/d/${id}` : ""}`;
 
 const here = dirname(fileURLToPath(import.meta.url));
-// dist/server/http.js and src/server/http.ts (tsx) both serve dist/web
+// dist/server/*.js (Node) and src/server/*.ts (bun dev) both serve dist/web
 const webRoot = resolve(here, here.endsWith(join("src", "server")) ? "../../dist/web" : "../web");
 
 const MIME: Record<string, string> = {

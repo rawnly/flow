@@ -5,8 +5,8 @@ A canvas for agents. Agents create and revise Mermaid diagrams over MCP; you wat
 ## Setup
 
 ```sh
-npm install
-npm run build
+bun install
+bun run build
 claude mcp add flow -- node "$PWD/dist/server/mcp.js"   # or any MCP client, stdio
 ```
 
@@ -30,11 +30,13 @@ Label nodes as `id["Title<br/>subtitle"]` for the two-line style. The viewer hig
 - **Source** and **Changes** (line diff against any earlier revision).
 - **Export**: SVG, PNG 2×, SVG markup, or copy as a Markdown code block.
 
+Users only need Node 20+: `dist/` is plain JavaScript. Bun is for working on Flow.
+
 ## Develop
 
 ```sh
-npm run seed         # synthetic demo diagrams
-npm run dev:server   # API on :4729
-npm run dev          # Vite viewer with /api proxied
-npm test
+bun run seed         # synthetic demo diagrams
+bun run dev:server   # API on :4729
+bun run dev          # Vite viewer with /api proxied
+bun test
 ```
