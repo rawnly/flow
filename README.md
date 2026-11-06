@@ -9,13 +9,13 @@ Requires Node 20+.
 ### Pi
 
 ```sh
-pi install npm:@rawnly/flow
+pi install npm:flow-mcp
 ```
 
 ### Any MCP client
 
 ```sh
-claude mcp add flow -- npx -y -p @rawnly/flow flow-mcp
+claude mcp add flow -- npx -y -p flow-mcp flow-mcp
 ```
 
 Or in your client's config (`.mcp.json`, `mcp.json`, ...):
@@ -25,7 +25,7 @@ Or in your client's config (`.mcp.json`, `mcp.json`, ...):
   "mcpServers": {
     "flow": {
       "command": "npx",
-      "args": ["-y", "-p", "@rawnly/flow", "flow-mcp"],
+      "args": ["-y", "-p", "flow-mcp", "flow-mcp"],
       "env": {
         "FLOW_DIR": ".flow",
         "FLOW_AGENT_NAME": "claude"
