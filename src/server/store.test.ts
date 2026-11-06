@@ -59,3 +59,23 @@ test("each .flow dir gets its own viewer; same dir reuses it", async () => {
     child.kill();
   }
 });
+
+test("concurrent writers from several processes lose nothing", async () => {
+  const { spawn } = await import("node:child_process");
+  const run = (args: string[]) =>
+    new Promise<string>((ok, fail) => {
+      const c = spawn(process.execPath, [join(import.meta.dir, "fixtures/writer.ts"), ...args], { env: process.env });
+      let out = "";
+      c.stdout.on("data", (d) => (out += d));
+      c.on("exit", (code) => (code === 0 ? ok(out) : fail(new Error(`writer exited ${code}`))));
+    });
+  const d = await store.createDiagram("Shared", "flowchart TD\n a-->b", "t");
+  await Promise.all([1, 2, 3, 4].map(() => run(["write", d.id, "15"])));
+  const after = (await store.getDiagram(d.id))!;
+  assert.equal(after.revisions.length, 1 + 4 * 15);
+  assert.equal(after.feedback.length, 4 * 15);
+  assert.deepEqual(after.revisions.map((r) => r.n), after.revisions.map((_, i) => i + 1));
+
+  const ids = (await Promise.all([1, 2, 3].map(() => run(["create", "", "5"])))).join("").trim().split("\n");
+  assert.equal(new Set(ids).size, 15);
+}, 60_000);

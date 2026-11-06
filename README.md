@@ -23,6 +23,7 @@ The extension gives pi the same tools natively, plus:
 - **Feedback comes back by itself.** When you click *Send to agent* in the viewer, the comment arrives in the pi conversation and the agent revises the diagram, then resolves the comment. Only diagrams the current session created or edited are delivered (others are left alone, e.g. another session's).
 - The viewer opens in your browser the first time the agent creates a diagram; `/flow [id]` opens it any time.
 - The footer shows open feedback count.
+- **Several agents, one project:** writes are locked per diagram, so agents, MCP servers and the viewer never overwrite each other. Feedback goes to the session that wrote the latest revision, so only one agent reacts. If the session hosting the viewer exits, another takes it over within a few seconds.
 
 Diagrams are stored in `<project>/.flow/`. Build the viewer once (`bun run build`) when installing from a git checkout.
 

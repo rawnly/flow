@@ -28,6 +28,16 @@ export default function (pi: ExtensionAPI) {
   let debounce: NodeJS.Timeout | undefined;
   let openedViewer = false;
   let ctxRef: ExtensionContext | undefined;
+  let session: string | undefined; // pi session id, stamped on revisions so feedback finds its writer
+  let keepAlive: NodeJS.Timeout | undefined;
+
+  // Once this session uses Flow, keep a viewer up: if the session hosting it exits, take over.
+  const ensureViewer = async () => {
+    const r = await startHttp();
+    keepAlive ??= setInterval(() => void startHttp().catch(() => {}), 5_000);
+    keepAlive.unref();
+    return r;
+  };
 
   const openUrl = (url: string) =>
     pi.exec(process.platform === "darwin" ? "open" : process.platform === "win32" ? "explorer" : "xdg-open", [url]).catch(() => {});
@@ -46,9 +56,12 @@ export default function (pi: ExtensionAPI) {
       const d = await getDiagram(id).catch(() => null);
       if (!d) continue;
       const fresh = d.feedback.filter((f) => f.status === "open" && !seen.has(f.id));
+      fresh.forEach((f) => seen.add(f.id));
+      // Several sessions may have touched this diagram; only the latest writer handles feedback.
+      const writer = d.revisions.at(-1)!.session;
+      if (writer && writer !== session) continue;
       open += d.feedback.filter((f) => f.status === "open").length;
       if (!fresh.length) continue;
-      fresh.forEach((f) => seen.add(f.id));
       pi.sendMessage<FeedbackDetails>(
         {
           customType: MSG,
@@ -78,6 +91,7 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_start", async (_event, ctx) => {
     ctxRef = ctx;
+    session = ctx.sessionManager.getSessionId();
     process.env.FLOW_DIR = userDir ?? join(ctx.cwd, ".flow");
     owned.clear();
     for (const e of ctx.sessionManager.getEntries()) {
@@ -89,6 +103,8 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_shutdown", async () => {
     clearTimeout(debounce);
+    clearInterval(keepAlive);
+    keepAlive = undefined;
     watcher?.close();
     watcher = undefined;
     ctxRef = undefined;
@@ -111,8 +127,8 @@ export default function (pi: ExtensionAPI) {
         ],
       }),
       async execute(_id, params, _signal, _onUpdate, ctx) {
-        await startHttp().catch(() => false);
-        const r = await t.run(params, AUTHOR);
+        await ensureViewer().catch(() => false);
+        const r = await t.run(params, AUTHOR, session);
         if (!r.isError && r.diagramId && (isCreate || t.name === "update_diagram")) {
           own(r.diagramId);
           const d = await getDiagram(r.diagramId);
@@ -146,7 +162,7 @@ export default function (pi: ExtensionAPI) {
     handler: async (args, ctx) => {
       const id = args.trim() || undefined;
       if (id && !(await getDiagram(id).catch(() => null))) return ctx.ui.notify(`No Flow diagram "${id}"`, "error");
-      const mine = await startHttp().catch((e) => (ctx.ui.notify(`Flow viewer failed: ${e.message}`, "error"), null));
+      const mine = await ensureViewer().catch((e) => (ctx.ui.notify(`Flow viewer failed: ${e.message}`, "error"), null));
       if (mine === null) return;
       const url = viewerUrl(id);
       await openUrl(url);

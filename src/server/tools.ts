@@ -8,7 +8,7 @@ export type FlowTool = {
   name: string;
   description: string;
   shape: z.ZodRawShape;
-  run: (args: any, author: string) => Promise<ToolResult>;
+  run: (args: any, author: string, session?: string) => Promise<ToolResult>;
 };
 
 const ok = (text: string, diagramId?: string): ToolResult => ({ text, diagramId });
@@ -43,10 +43,10 @@ export const tools: FlowTool[] = [
       source: z.string().min(1).max(200_000).describe("Mermaid source"),
       note: z.string().max(500).optional().describe("One line describing this revision"),
     },
-    async run({ title, source, note }, author) {
+    async run({ title, source, note }, author, session) {
       const err = await validateMermaid(source);
       if (err) return fail(`Mermaid did not parse, nothing was saved:\n${err}`);
-      const d = await createDiagram(title, source, author, note);
+      const d = await createDiagram(title, source, author, note, session);
       return ok(`Created. ${summary(d)}`, d.id);
     },
   },
@@ -59,13 +59,13 @@ export const tools: FlowTool[] = [
       note: z.string().max(500).optional().describe("One line describing what changed"),
       title: z.string().min(1).max(120).optional().describe("Rename the diagram"),
     },
-    async run({ id, source, note, title }, author) {
+    async run({ id, source, note, title }, author, session) {
       const prev = await getDiagram(id);
       if (!prev) return fail(`No diagram with id "${id}". Call list_diagrams.`);
       if (prev.revisions.at(-1)!.source === source && !title) return fail("Source is identical to the latest revision; nothing saved.");
       const err = await validateMermaid(source);
       if (err) return fail(`Mermaid did not parse, nothing was saved:\n${err}`);
-      return ok(`Saved. ${summary(await addRevision(id, source, author, note, title))}`, id);
+      return ok(`Saved. ${summary(await addRevision(id, source, author, note, title, session))}`, id);
     },
   },
   {
