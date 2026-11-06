@@ -9,6 +9,25 @@ pi install npm:@rawnly/flow                      # pi extension
 claude mcp add flow -- npx -y -p @rawnly/flow flow-mcp   # any MCP client
 ```
 
+Or add it to your MCP client's config (e.g. `.mcp.json` / `mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "flow": {
+      "command": "npx",
+      "args": ["-y", "-p", "@rawnly/flow", "flow-mcp"],
+      "env": {
+        "FLOW_DIR": ".flow",
+        "FLOW_AGENT_NAME": "claude"
+      }
+    }
+  }
+}
+```
+
+`env` is optional (see Setup for the variables).
+
 ## Setup from source
 
 ```sh
