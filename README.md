@@ -2,7 +2,14 @@
 
 A canvas for agents. Agents create and revise Mermaid diagrams over MCP; you watch every revision render live, comment on nodes, and export.
 
-## Setup
+## Install
+
+```sh
+pi install npm:@rawnly/flow                      # pi extension
+claude mcp add flow -- npx -y -p @rawnly/flow flow-mcp   # any MCP client
+```
+
+## Setup from source
 
 ```sh
 bun install

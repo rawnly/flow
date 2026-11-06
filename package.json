@@ -1,7 +1,6 @@
 {
-  "name": "flow",
+  "name": "@rawnly/flow",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
   "bin": {
     "flow-mcp": "dist/server/mcp.js"
@@ -13,7 +12,8 @@
     "mcp": "node dist/server/mcp.js",
     "seed": "FLOW_DIR=.flow bun scripts/seed.ts",
     "test": "bun test",
-    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.server.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.server.json",
+    "prepublishOnly": "bun run build"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.3.0",
@@ -60,5 +60,10 @@
     "extensions": [
       "./pi/extension.ts"
     ]
+  },
+  "license": "MIT",
+  "repository": "github:rawnly/flow",
+  "publishConfig": {
+    "access": "public"
   }
 }
