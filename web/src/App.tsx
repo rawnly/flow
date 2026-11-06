@@ -19,6 +19,7 @@ export function App() {
   const [highlight, setHighlight] = useState(() => localStorage.getItem("flow.highlight") !== "off");
   const [focusFid, setFocusFid] = useState<string | null>(null);
   const [conn, setConn] = useState<"live" | "down">("live");
+  const [missing, setMissing] = useState(false);
   const [toast, setToast] = useState<{ text: string; action?: { label: string; run: () => void } } | null>(null);
   const svgEl = useRef<SVGSVGElement | null>(null);
   const onSvg = useCallback((s: SVGSVGElement | null) => void (svgEl.current = s), []);
@@ -40,6 +41,7 @@ export function App() {
       try {
         const next = await api.get(which);
         if (which !== idRef.current) return;
+        setMissing(false);
         setD((prev) => {
           const before = prev?.id === which ? prev.revisions.at(-1)!.n : null;
           const now = next.revisions.at(-1)!.n;
@@ -48,7 +50,7 @@ export function App() {
           return next;
         });
       } catch {
-        if (which === idRef.current) setD(null);
+        if (which === idRef.current) (setD(null), setMissing(true));
       }
     },
     [say],
@@ -69,6 +71,7 @@ export function App() {
 
   useEffect(() => {
     setD(null);
+    setMissing(false);
     setViewN(null);
     setFocusFid(null);
     setTab("diagram");
@@ -159,12 +162,14 @@ export function App() {
     mutateFeedback(() => api.addFeedback(d!.id, { nodeId, nodeLabel, text, revision: rev!.n }), "Sent. The agent sees it on its next get_feedback.");
 
   return (
-    <div className="app">
+    <div className={`app${d && rev ? "" : " no-panel"}`}>
       <Rail list={list} current={id} conn={conn} />
 
       <main className="main">
         {!list ? null : !list.length ? (
           <Onboarding />
+        ) : missing ? (
+          <NotFound id={id!} />
         ) : !d || !rev ? (
           <div className="canvas-loading">Loading…</div>
         ) : (
@@ -534,6 +539,21 @@ function HistoryPanel({ revisions, current, latest, onPick }: { revisions: Revis
         ))}
       </ol>
       <p className="panel-hint"><kbd>[</kbd> <kbd>]</kbd> step through revisions</p>
+    </div>
+  );
+}
+
+function NotFound({ id }: { id: string }) {
+  const [dir, setDir] = useState<string | null>(null);
+  useEffect(() => void fetch("/api/info").then((r) => r.json()).then((i) => setDir(i.dir ?? null)).catch(() => {}), []);
+  return (
+    <div className="onboarding">
+      <h2>This viewer doesn’t have “{id}”</h2>
+      <p>
+        Each project has its own viewer, and this one serves <code className="inline">{dir ?? "another project"}</code>. The diagram was probably
+        created in a different project: open the viewer link the agent printed for it, or run <code className="inline">/flow {id}</code> in that
+        project’s pi session.
+      </p>
     </div>
   );
 }

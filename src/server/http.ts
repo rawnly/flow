@@ -4,6 +4,7 @@ import { mkdir, stat } from "node:fs/promises";
 import { extname, join, normalize, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  flowDir,
   addFeedback,
   deleteFeedback,
   diagramsDir,
@@ -13,9 +14,12 @@ import {
   setFeedbackStatus,
 } from "./store.js";
 
-export const PORT = Number(process.env.FLOW_PORT ?? 4729);
+const BASE_PORT = Number(process.env.FLOW_PORT ?? 4729);
+const PORT_TRIES = 20;
 export const HOST = "127.0.0.1";
-export const viewerUrl = (id?: string) => `http://${HOST}:${PORT}/${id ? `#/d/${id}` : ""}`;
+// Resolved by startHttp(): our own port, or the port of a viewer already serving the same .flow dir.
+let port = BASE_PORT;
+export const viewerUrl = (id?: string) => `http://${HOST}:${port}/${id ? `#/d/${id}` : ""}`;
 
 const here = dirname(fileURLToPath(import.meta.url));
 // dist/server/*.js (Node) and src/server/*.ts (bun dev) both serve dist/web
@@ -95,7 +99,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     return;
   }
 
-  if (parts[1] === "info") return json(res, 200, { mcpPath: resolve(webRoot, "../server/mcp.js") });
+  if (parts[1] === "info") return json(res, 200, { app: "flow", dir: flowDir(), mcpPath: resolve(webRoot, "../server/mcp.js") });
 
   if (parts[1] !== "diagrams") throw new HttpError(404, "Not found");
   const [, , id, sub, fid] = parts;
@@ -159,28 +163,60 @@ async function watchStore() {
 let running: Promise<boolean> | undefined;
 let server: ReturnType<typeof createServer> | undefined;
 let pinger: NodeJS.Timeout | undefined;
+let reused: number | undefined; // port of another process's viewer for the same dir
 
-/** Starts the viewer server once per process. Resolves false if another Flow viewer already owns the port. */
-export function startHttp(): Promise<boolean> {
-  if (running) return running;
-  server = createServer((req, res) => {
+/** Which .flow dir a Flow viewer on `p` serves; null if nothing (or not Flow) answers. */
+async function probe(p: number): Promise<string | null> {
+  try {
+    const r = await fetch(`http://${HOST}:${p}/api/info`, { signal: AbortSignal.timeout(800) });
+    const info: any = await r.json();
+    return info?.app === "flow" && typeof info.dir === "string" ? info.dir : null;
+  } catch {
+    return null;
+  }
+}
+
+function listen(p: number): Promise<boolean> {
+  const s = createServer((req, res) => {
     handle(req, res).catch((e) => {
       const code = e instanceof HttpError ? e.code : /No (diagram|feedback)/.test(e.message) ? 404 : 500;
       json(res, code, { error: e.message });
     });
   });
-  pinger = setInterval(() => broadcast({ type: "ping" }), 25_000);
-  pinger.unref();
-  const s = server;
-  running = new Promise((ok, fail) => {
+  return new Promise((ok, fail) => {
     s.once("error", (e: any) => (e.code === "EADDRINUSE" ? ok(false) : fail(e)));
-    s.listen(PORT, HOST, async () => {
+    s.listen(p, HOST, async () => {
+      server = s;
       await watchStore();
+      pinger = setInterval(() => broadcast({ type: "ping" }), 25_000);
+      pinger.unref();
       ok(true);
     });
   });
-  running.then((owned) => !owned && stopHttp(), () => stopHttp());
-  return running;
+}
+
+/**
+ * Makes sure a viewer serves this process's .flow dir. Reuses one another process already runs for
+ * the same dir; otherwise starts our own on the first free port from FLOW_PORT (default 4729).
+ * Resolves true when this process owns the viewer.
+ */
+export async function startHttp(): Promise<boolean> {
+  // The process we were reusing may have exited; then take over.
+  if (reused !== undefined && (await probe(reused)) !== flowDir()) {
+    reused = undefined;
+    running = undefined;
+  }
+  return (running ??= (async () => {
+    const dir = flowDir();
+    for (let p = BASE_PORT; p < BASE_PORT + PORT_TRIES; p++) {
+      if (await listen(p)) return (port = p), true;
+      if ((await probe(p)) === dir) return (port = reused = p), false;
+    }
+    throw new Error(`No free port in ${BASE_PORT}-${BASE_PORT + PORT_TRIES - 1}`);
+  })().catch((e) => {
+    running = undefined;
+    throw e;
+  }));
 }
 
 export function stopHttp() {
@@ -189,9 +225,10 @@ export function stopHttp() {
   for (const c of clients) c.end();
   clients.clear();
   server?.close();
-  watcher = server = pinger = running = undefined;
+  watcher = server = pinger = running = reused = undefined;
+  port = BASE_PORT;
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  startHttp().then((ok) => console.error(ok ? `Flow viewer on ${viewerUrl()}` : `Port ${PORT} busy; another Flow viewer is running.`));
+  startHttp().then((ok) => console.error(`${ok ? "Flow viewer on" : "Already served by"} ${viewerUrl()} (${flowDir()})`));
 }

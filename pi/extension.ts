@@ -150,7 +150,7 @@ export default function (pi: ExtensionAPI) {
       if (mine === null) return;
       const url = viewerUrl(id);
       await openUrl(url);
-      ctx.ui.notify(mine ? `Flow viewer: ${url}` : `Flow viewer already running at ${url}`, "info");
+      ctx.ui.notify(`Flow viewer${mine ? "" : " (shared with another session)"}: ${url}`, "info");
     },
   });
 }

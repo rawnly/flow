@@ -54,6 +54,8 @@ code { font-family: var(--mono); }
 
 /* Shell */
 .app { display: grid; grid-template-columns: 248px minmax(0, 1fr) 344px; height: 100%; }
+.app.no-panel { grid-template-columns: 248px minmax(0, 1fr); }
+.app.no-panel .main { border-right: 0; }
 .main { display: flex; flex-direction: column; min-width: 0; border-left: 1px solid var(--line); border-right: 1px solid var(--line); position: relative; }
 
 /* Rail */

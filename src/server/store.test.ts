@@ -39,3 +39,23 @@ test("validation does not leak DOM globals", async () => {
   assert.equal(typeof (globalThis as any).window, "undefined");
   assert.equal(await validateMermaid('flowchart LR\n a["A<br/>sub"] --> b'), null);
 });
+
+test("each .flow dir gets its own viewer; same dir reuses it", async () => {
+  const { spawn } = await import("node:child_process");
+  const { mkdtemp } = await import("node:fs/promises");
+  const other = await mkdtemp(join(tmpdir(), "flow-other-"));
+  process.env.FLOW_PORT = "4791";
+  // Another project's viewer holds the base port.
+  const child = spawn(process.execPath, [join(import.meta.dir, "http.ts")], { env: { ...process.env, FLOW_DIR: other }, stdio: ["ignore", "ignore", "pipe"] });
+  await new Promise<void>((r) => child.stderr!.once("data", () => r()));
+  try {
+    const http = await import("./http.js");
+    assert.equal(await http.startHttp(), true);
+    assert.match(http.viewerUrl(), /:4792\//);
+    const info = await (await fetch("http://127.0.0.1:4792/api/info")).json();
+    assert.equal(info.dir, process.env.FLOW_DIR);
+    http.stopHttp();
+  } finally {
+    child.kill();
+  }
+});
