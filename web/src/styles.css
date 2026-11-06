@@ -141,7 +141,11 @@ code { font-family: var(--mono); }
   touch-action: none;
 }
 .canvas:active { cursor: grabbing; }
-.layer { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
+/* Dragging pans; it must not select diagram text. Typing surfaces opt back in. */
+.canvas { user-select: none; -webkit-user-select: none; }
+.canvas .composer, .canvas .render-error pre { user-select: text; -webkit-user-select: text; }
+/* No will-change: it pins the raster at 1x, so zoomed text turns blurry. */
+.layer { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
 .svg-host { position: relative; }
 .svg-host svg { display: block; overflow: visible; }
 .svg-host g.node { cursor: pointer; transition: opacity 0.25s var(--ease); outline: none; }
