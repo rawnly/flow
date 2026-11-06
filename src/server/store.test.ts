@@ -33,3 +33,9 @@ test("validates mermaid", async () => {
 test("validates html labels", async () => {
   assert.equal(await validateMermaid('flowchart LR\n a["A<br/>sub"] --> b'), null);
 });
+
+test("validation does not leak DOM globals", async () => {
+  await validateMermaid('flowchart LR\n a["A<br/>sub"] --> b');
+  assert.equal(typeof (globalThis as any).window, "undefined");
+  assert.equal(await validateMermaid('flowchart LR\n a["A<br/>sub"] --> b'), null);
+});

@@ -12,6 +12,20 @@ claude mcp add flow -- node "$PWD/dist/server/mcp.js"   # or any MCP client, std
 
 The first MCP process also serves the viewer at http://127.0.0.1:4729. Diagrams live in `./.flow/diagrams/*.json` (set `FLOW_DIR` to change, `FLOW_PORT` for the port, `FLOW_AGENT_NAME` for the author shown in history).
 
+## Pi extension
+
+```sh
+pi install /path/to/flow        # or: pi -e /path/to/flow/pi/extension.ts
+```
+
+The extension gives pi the same tools natively, plus:
+
+- **Feedback comes back by itself.** When you click *Send to agent* in the viewer, the comment arrives in the pi conversation and the agent revises the diagram, then resolves the comment. Only diagrams the current session created or edited are delivered (others are left alone, e.g. another session's).
+- The viewer opens in your browser the first time the agent creates a diagram; `/flow [id]` opens it any time.
+- The footer shows open feedback count.
+
+Diagrams are stored in `<project>/.flow/`. Build the viewer once (`bun run build`) when installing from a git checkout.
+
 ## Tools
 
 | Tool | What it does |

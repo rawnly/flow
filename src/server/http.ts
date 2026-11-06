@@ -156,22 +156,40 @@ async function watchStore() {
   });
 }
 
-/** Starts the viewer server. Resolves false if another Flow viewer already owns the port. */
+let running: Promise<boolean> | undefined;
+let server: ReturnType<typeof createServer> | undefined;
+let pinger: NodeJS.Timeout | undefined;
+
+/** Starts the viewer server once per process. Resolves false if another Flow viewer already owns the port. */
 export function startHttp(): Promise<boolean> {
-  const server = createServer((req, res) => {
+  if (running) return running;
+  server = createServer((req, res) => {
     handle(req, res).catch((e) => {
       const code = e instanceof HttpError ? e.code : /No (diagram|feedback)/.test(e.message) ? 404 : 500;
       json(res, code, { error: e.message });
     });
   });
-  setInterval(() => broadcast({ type: "ping" }), 25_000).unref();
-  return new Promise((ok, fail) => {
-    server.once("error", (e: any) => (e.code === "EADDRINUSE" ? ok(false) : fail(e)));
-    server.listen(PORT, HOST, async () => {
+  pinger = setInterval(() => broadcast({ type: "ping" }), 25_000);
+  pinger.unref();
+  const s = server;
+  running = new Promise((ok, fail) => {
+    s.once("error", (e: any) => (e.code === "EADDRINUSE" ? ok(false) : fail(e)));
+    s.listen(PORT, HOST, async () => {
       await watchStore();
       ok(true);
     });
   });
+  running.then((owned) => !owned && stopHttp(), () => stopHttp());
+  return running;
+}
+
+export function stopHttp() {
+  watcher?.close();
+  clearInterval(pinger);
+  for (const c of clients) c.end();
+  clients.clear();
+  server?.close();
+  watcher = server = pinger = running = undefined;
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

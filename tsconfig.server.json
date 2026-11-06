@@ -8,6 +8,6 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["src/server"],
+  "include": ["src/server", "pi"],
   "exclude": ["src/server/*.test.ts"]
 }
