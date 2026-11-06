@@ -1,0 +1,179 @@
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { createReadStream, watch, type FSWatcher } from "node:fs";
+import { mkdir, stat } from "node:fs/promises";
+import { extname, join, normalize, resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  addFeedback,
+  deleteFeedback,
+  diagramsDir,
+  getDiagram,
+  isId,
+  listDiagrams,
+  setFeedbackStatus,
+} from "./store.js";
+
+export const PORT = Number(process.env.FLOW_PORT ?? 4729);
+export const HOST = "127.0.0.1";
+export const viewerUrl = (id?: string) => `http://${HOST}:${PORT}/${id ? `#/d/${id}` : ""}`;
+
+const here = dirname(fileURLToPath(import.meta.url));
+// dist/server/http.js and src/server/http.ts (tsx) both serve dist/web
+const webRoot = resolve(here, here.endsWith(join("src", "server")) ? "../../dist/web" : "../web");
+
+const MIME: Record<string, string> = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript",
+  ".css": "text/css",
+  ".svg": "image/svg+xml",
+  ".woff2": "font/woff2",
+  ".png": "image/png",
+  ".json": "application/json",
+};
+
+const json = (res: ServerResponse, code: number, body: unknown) => {
+  res.writeHead(code, { "content-type": "application/json" });
+  res.end(JSON.stringify(body));
+};
+
+async function readJson(req: IncomingMessage): Promise<any> {
+  let size = 0;
+  const chunks: Buffer[] = [];
+  for await (const c of req) {
+    size += c.length;
+    if (size > 64_000) throw new HttpError(413, "Body too large");
+    chunks.push(c);
+  }
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+  } catch {
+    throw new HttpError(400, "Invalid JSON");
+  }
+}
+
+class HttpError extends Error {
+  constructor(public code: number, msg: string) {
+    super(msg);
+  }
+}
+
+const clients = new Set<ServerResponse>();
+const broadcast = (data: unknown) => {
+  for (const c of clients) c.write(`data: ${JSON.stringify(data)}\n\n`);
+};
+
+async function serveStatic(req: IncomingMessage, res: ServerResponse) {
+  const url = new URL(req.url ?? "/", "http://x");
+  const rel = normalize(decodeURIComponent(url.pathname)).replace(/^(\.\.[/\\])+/, "");
+  let p = join(webRoot, rel);
+  if (!p.startsWith(webRoot)) return json(res, 403, { error: "Forbidden" });
+  try {
+    if ((await stat(p)).isDirectory()) p = join(p, "index.html");
+  } catch {
+    p = join(webRoot, "index.html");
+  }
+  try {
+    await stat(p);
+  } catch {
+    res.writeHead(404, { "content-type": "text/plain" });
+    return res.end("Viewer not built. Run `npm run build`, or `npm run dev` for development.");
+  }
+  res.writeHead(200, { "content-type": MIME[extname(p)] ?? "application/octet-stream" });
+  createReadStream(p).pipe(res);
+}
+
+async function handle(req: IncomingMessage, res: ServerResponse) {
+  const url = new URL(req.url ?? "/", "http://x");
+  const parts = url.pathname.split("/").filter(Boolean); // ["api","diagrams",id,"feedback",fid]
+  if (parts[0] !== "api") return serveStatic(req, res);
+
+  if (parts[1] === "events") {
+    res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
+    res.write(": connected\n\n");
+    clients.add(res);
+    req.on("close", () => clients.delete(res));
+    return;
+  }
+
+  if (parts[1] === "info") return json(res, 200, { mcpPath: resolve(webRoot, "../server/mcp.js") });
+
+  if (parts[1] !== "diagrams") throw new HttpError(404, "Not found");
+  const [, , id, sub, fid] = parts;
+
+  if (!id && req.method === "GET") {
+    const list = await listDiagrams();
+    return json(
+      res,
+      200,
+      list.map((d) => ({
+        id: d.id,
+        title: d.title,
+        updatedAt: d.updatedAt,
+        revision: d.revisions.at(-1)?.n ?? 0,
+        openFeedback: d.feedback.filter((f) => f.status === "open").length,
+      })),
+    );
+  }
+  if (!id || !isId(id)) throw new HttpError(400, "Invalid diagram id");
+
+  if (!sub && req.method === "GET") {
+    const d = await getDiagram(id);
+    return d ? json(res, 200, d) : json(res, 404, { error: "Not found" });
+  }
+
+  if (sub === "feedback" && !fid && req.method === "POST") {
+    const b = await readJson(req);
+    const text = typeof b.text === "string" ? b.text.trim() : "";
+    if (!text || text.length > 4000) throw new HttpError(400, "Feedback text must be 1–4000 characters");
+    if (!Number.isInteger(b.revision)) throw new HttpError(400, "revision must be an integer");
+    const nodeId = typeof b.nodeId === "string" && b.nodeId.length <= 200 ? b.nodeId : null;
+    const nodeLabel = typeof b.nodeLabel === "string" ? b.nodeLabel.slice(0, 200) : undefined;
+    return json(res, 201, await addFeedback(id, { text, revision: b.revision, nodeId, nodeLabel }));
+  }
+
+  if (sub === "feedback" && fid && req.method === "PATCH") {
+    const b = await readJson(req);
+    if (b.status !== "open" && b.status !== "resolved") throw new HttpError(400, "status must be open or resolved");
+    return json(res, 200, await setFeedbackStatus(id, fid, b.status));
+  }
+
+  if (sub === "feedback" && fid && req.method === "DELETE") {
+    return json(res, 200, await deleteFeedback(id, fid));
+  }
+
+  throw new HttpError(404, "Not found");
+}
+
+let watcher: FSWatcher | undefined;
+async function watchStore() {
+  await mkdir(diagramsDir(), { recursive: true });
+  const pending = new Map<string, NodeJS.Timeout>();
+  watcher = watch(diagramsDir(), (_e, name) => {
+    if (!name?.endsWith(".json")) return;
+    const id = name.slice(0, -5);
+    clearTimeout(pending.get(id));
+    pending.set(id, setTimeout(() => broadcast({ type: "changed", id }), 40));
+  });
+}
+
+/** Starts the viewer server. Resolves false if another Flow viewer already owns the port. */
+export function startHttp(): Promise<boolean> {
+  const server = createServer((req, res) => {
+    handle(req, res).catch((e) => {
+      const code = e instanceof HttpError ? e.code : /No (diagram|feedback)/.test(e.message) ? 404 : 500;
+      json(res, code, { error: e.message });
+    });
+  });
+  setInterval(() => broadcast({ type: "ping" }), 25_000).unref();
+  return new Promise((ok, fail) => {
+    server.once("error", (e: any) => (e.code === "EADDRINUSE" ? ok(false) : fail(e)));
+    server.listen(PORT, HOST, async () => {
+      await watchStore();
+      ok(true);
+    });
+  });
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+  startHttp().then((ok) => console.error(ok ? `Flow viewer on ${viewerUrl()}` : `Port ${PORT} busy; another Flow viewer is running.`));
+}
