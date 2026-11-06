@@ -1,5 +1,5 @@
 {
-  "name": "flow-mcp",
+  "name": "@rawnly/flow",
   "version": "0.1.0",
   "type": "module",
   "bin": {
