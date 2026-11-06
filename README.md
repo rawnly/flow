@@ -2,14 +2,23 @@
 
 A canvas for agents. Agents create and revise Mermaid diagrams over MCP; you watch every revision render live, comment on nodes, and export.
 
+Requires Node 20+.
+
 ## Install
 
+### Pi
+
 ```sh
-pi install npm:@rawnly/flow                      # pi extension
-claude mcp add flow -- npx -y -p @rawnly/flow flow-mcp   # any MCP client
+pi install npm:@rawnly/flow
 ```
 
-Or add it to your MCP client's config (e.g. `.mcp.json` / `mcp.json`):
+### Any MCP client
+
+```sh
+claude mcp add flow -- npx -y -p @rawnly/flow flow-mcp
+```
+
+Or in your client's config (`.mcp.json`, `mcp.json`, ...):
 
 ```json
 {
@@ -26,32 +35,17 @@ Or add it to your MCP client's config (e.g. `.mcp.json` / `mcp.json`):
 }
 ```
 
-`env` is optional (see Setup for the variables).
+The first MCP process also serves the viewer at <http://127.0.0.1:4729>.
 
-## Setup from source
+## Configuration
 
-```sh
-bun install
-bun run build
-claude mcp add flow -- node "$PWD/dist/server/mcp.js"   # or any MCP client, stdio
-```
+All optional, set as environment variables.
 
-The first MCP process also serves the viewer at http://127.0.0.1:4729. Diagrams live in `./.flow/diagrams/*.json` (set `FLOW_DIR` to change, `FLOW_PORT` for the port, `FLOW_AGENT_NAME` for the author shown in history).
-
-## Pi extension
-
-```sh
-pi install /path/to/flow        # or: pi -e /path/to/flow/pi/extension.ts
-```
-
-The extension gives pi the same tools natively, plus:
-
-- **Feedback comes back by itself.** When you click *Send to agent* in the viewer, the comment arrives in the pi conversation and the agent revises the diagram, then resolves the comment. Only diagrams the current session created or edited are delivered (others are left alone, e.g. another session's).
-- The viewer opens in your browser the first time the agent creates a diagram; `/flow [id]` opens it any time.
-- The footer shows open feedback count.
-- **Several agents, one project:** writes are locked per diagram, so agents, MCP servers and the viewer never overwrite each other. Feedback goes to the session that wrote the latest revision, so only one agent reacts. If the session hosting the viewer exits, another takes it over within a few seconds.
-
-Diagrams are stored in `<project>/.flow/`. Build the viewer once (`bun run build`) when installing from a git checkout.
+| Variable | Default | Purpose |
+|---|---|---|
+| `FLOW_DIR` | `./.flow` | Where diagrams are stored (`<FLOW_DIR>/diagrams/*.json`) |
+| `FLOW_PORT` | `4729` | Viewer port |
+| `FLOW_AGENT_NAME` | | Author name shown in history |
 
 ## Tools
 
@@ -63,23 +57,43 @@ Diagrams are stored in `<project>/.flow/`. Build the viewer once (`bun run build
 | `get_feedback` | Human comments, each anchored to a node id. |
 | `resolve_feedback` | Mark a comment fixed, with a reply. |
 
-Label nodes as `id["Title<br/>subtitle"]` for the two-line style. The viewer highlights what's new since the previous revision on its own.
+Tip: label nodes as `id["Title<br/>subtitle"]` for the two-line style. The viewer highlights what changed since the previous revision on its own.
 
 ## Viewer
 
-- **Diagram**: pan (drag / scroll), zoom (pinch / ⌘-scroll), click a node to leave feedback, `[` `]` step through revisions.
-- **Edit**: change the Mermaid source with a live preview (your changes highlighted in blue). `⌘S` saves it as a revision by *you*. Tick **Ask the agent to adjust after my edit** (optionally saying what to do) and the agent tidies the diagram around your change. Editing an older revision restores it as a new one.
-- **Changes**: line diff against any earlier revision.
-- Nobody overwrites anybody: if the agent saves while you edit, you're warned before replacing it; if you edited since the agent last looked, its `update_diagram` is refused with your current source so it builds on your edit.
-- **Export**: SVG, PNG 2×, SVG markup, or copy as a Markdown code block.
+| Tab | What you can do |
+|---|---|
+| **Diagram** | Pan (drag / scroll), zoom (pinch / ⌘-scroll), click a node to leave feedback, `[` `]` to step through revisions. |
+| **Edit** | Change the Mermaid source with a live preview (your changes in blue). `⌘S` saves a revision by *you*. Tick **Ask the agent to adjust after my edit** to have the agent tidy up around it. Editing an old revision restores it as a new one. |
+| **Changes** | Line diff against any earlier revision. |
 
-Users only need Node 20+: `dist/` is plain JavaScript. Bun is for working on Flow.
+**Export:** SVG, PNG 2×, SVG markup, or copy as a Markdown code block.
+
+**No overwrites:** if the agent saves while you edit, you're warned before replacing it. If you edited since the agent last looked, its `update_diagram` is refused with your current source, so it builds on your edit.
+
+## Pi extension extras
+
+On top of the tools, the pi extension:
+
+- **Returns feedback automatically.** *Send to agent* in the viewer delivers the comment into the conversation; the agent revises the diagram and resolves it. Only diagrams the current session created or edited are delivered.
+- **Opens the viewer** on the first diagram created. `/flow [id]` opens it any time.
+- **Shows open feedback count** in the footer.
+- **Supports several agents per project.** Writes are locked per diagram, so agents, MCP servers and the viewer never clobber each other. Feedback goes to the session that wrote the latest revision. If the session hosting the viewer exits, another takes over within seconds.
 
 ## Develop
 
 ```sh
+bun install
+bun run build        # required once: builds the viewer into dist/
 bun run seed         # synthetic demo diagrams
 bun run dev:server   # API on :4729
 bun run dev          # Vite viewer with /api proxied
 bun test
+```
+
+Use your local build instead of the package:
+
+```sh
+claude mcp add flow -- node "$PWD/dist/server/mcp.js"
+pi install /path/to/flow     # or: pi -e /path/to/flow/pi/extension.ts
 ```
