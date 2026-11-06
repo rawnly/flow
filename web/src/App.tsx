@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { diffLines } from "diff";
 import { ago, api } from "./api";
 import { Canvas, type Changes } from "./Canvas";
+import { Editor } from "./Editor";
 import { Icon } from "./icons";
 import { exportSvg, svgToPng } from "./render";
 import type { Diagram, DiagramSummary, Feedback, Revision } from "./types";
@@ -20,6 +21,8 @@ export function App() {
   const [focusFid, setFocusFid] = useState<string | null>(null);
   const [conn, setConn] = useState<"live" | "down">("live");
   const [missing, setMissing] = useState(false);
+  // Unsaved edits per diagram and starting revision; survive tab switches and live updates.
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [toast, setToast] = useState<{ text: string; action?: { label: string; run: () => void } } | null>(null);
   const svgEl = useRef<SVGSVGElement | null>(null);
   const onSvg = useCallback((s: SVGSVGElement | null) => void (svgEl.current = s), []);
@@ -94,6 +97,8 @@ export function App() {
   const latest = d?.revisions.at(-1) ?? null;
   const rev = (viewN !== null && d?.revisions.find((r) => r.n === viewN)) || latest;
   const prev = d && rev ? d.revisions.find((r) => r.n === rev.n - 1) ?? null : null;
+  // Editing the latest keeps one draft even as new revisions arrive (the editor flags the conflict).
+  const draftKey = `${d?.id}:${viewN === null ? "latest" : `r${viewN}`}`;
   const focusNode = d?.feedback.find((f) => f.id === focusFid)?.nodeId ?? null;
 
   const step = useCallback(
@@ -189,7 +194,8 @@ export function App() {
               <nav className="seg" aria-label="View">
                 {(["diagram", "source", "changes"] as Tab[]).map((t) => (
                   <button key={t} aria-pressed={tab === t} onClick={() => setTab(t)} disabled={t === "changes" && !prev}>
-                    {t[0].toUpperCase() + t.slice(1)}
+                    {t === "source" ? "Edit" : t[0].toUpperCase() + t.slice(1)}
+                    {t === "source" && Object.keys(drafts).some((k) => k.startsWith(`${d.id}:`) && drafts[k] !== latest!.source) && <span className="dot" aria-label="unsaved changes" />}
                   </button>
                 ))}
               </nav>
@@ -214,7 +220,22 @@ export function App() {
                 head={(c) => <FigureHead title={d.title} rev={rev} prev={prev} changes={c} highlight={highlight} onToggle={toggleHighlight} note={rev.note} />}
               />
             )}
-            {tab === "source" && <SourceView source={rev.source} onCopy={copyMarkdown} />}
+            {tab === "source" && (
+              <Editor
+                key={draftKey}
+                d={d}
+                viewed={rev}
+                draft={drafts[draftKey] ?? rev.source}
+                setDraft={(v) => setDrafts((x) => ({ ...x, [draftKey]: v }))}
+                onSaved={(next) => {
+                  setDrafts((x) => Object.fromEntries(Object.entries(x).filter(([k]) => !k.startsWith(`${d.id}:`))));
+                  setD(next);
+                  setViewN(null);
+                  loadList();
+                }}
+                say={say}
+              />
+            )}
             {tab === "changes" && prev && <ChangesView revisions={d.revisions} rev={rev} />}
           </>
         )}
@@ -349,26 +370,6 @@ function ExportMenu({ onPick, disabled }: { onPick: (k: "svg" | "png" | "svg-cop
           <button role="menuitem" onClick={() => pick("svg-copy")}>Copy SVG markup<span>Paste into Figma or docs</span></button>
         </div>
       )}
-    </div>
-  );
-}
-
-function SourceView({ source, onCopy }: { source: string; onCopy: () => void }) {
-  const lines = source.replace(/\n$/, "").split("\n");
-  return (
-    <div className="code-view">
-      <div className="code-head">
-        <span>{lines.length} lines · Mermaid</span>
-        <button className="btn btn-quiet" onClick={onCopy}><Icon.copy /> Copy Markdown</button>
-      </div>
-      <pre className="code">
-        {lines.map((l, i) => (
-          <div className="code-line" key={i}>
-            <span className="ln">{i + 1}</span>
-            <span>{l || " "}</span>
-          </div>
-        ))}
-      </pre>
     </div>
   );
 }

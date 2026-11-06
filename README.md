@@ -42,7 +42,9 @@ Label nodes as `id["Title<br/>subtitle"]` for the two-line style. The viewer hig
 ## Viewer
 
 - **Diagram**: pan (drag / scroll), zoom (pinch / ⌘-scroll), click a node to leave feedback, `[` `]` step through revisions.
-- **Source** and **Changes** (line diff against any earlier revision).
+- **Edit**: change the Mermaid source with a live preview (your changes highlighted in blue). `⌘S` saves it as a revision by *you*. Tick **Ask the agent to adjust after my edit** (optionally saying what to do) and the agent tidies the diagram around your change. Editing an older revision restores it as a new one.
+- **Changes**: line diff against any earlier revision.
+- Nobody overwrites anybody: if the agent saves while you edit, you're warned before replacing it; if you edited since the agent last looked, its `update_diagram` is refused with your current source so it builds on your edit.
 - **Export**: SVG, PNG 2×, SVG markup, or copy as a Markdown code block.
 
 Users only need Node 20+: `dist/` is plain JavaScript. Bun is for working on Flow.

@@ -79,3 +79,30 @@ test("concurrent writers from several processes lose nothing", async () => {
   const ids = (await Promise.all([1, 2, 3].map(() => run(["create", "", "5"])))).join("").trim().split("\n");
   assert.equal(new Set(ids).size, 15);
 }, 60_000);
+
+test("human edits: conflict on stale base, agent update refused until it has seen the edit", async () => {
+  const { tools } = await import("./tools.js");
+  const run = (name: string, args: any, session = "s1") => tools.find((t) => t.name === name)!.run(args, "agent", session);
+
+  const created = await run("create_diagram", { title: "Human edits", source: "flowchart LR\n a-->b" });
+  const id = created.diagramId!;
+  // Human edits r1 -> r2; a second, stale human save based on r1 conflicts.
+  await store.addHumanRevision(id, "flowchart LR\n a-->b-->c", 1, "add c");
+  await assert.rejects(store.addHumanRevision(id, "flowchart LR\n a-->x", 1), store.ConflictError);
+
+  // The agent hasn't seen r2: its update is refused and gets the current source back.
+  const refused = await run("update_diagram", { id, source: "flowchart LR\n a-->b-->d" });
+  assert.equal(refused.isError, true);
+  assert.match(refused.text, /r2 was written by you/);
+  assert.match(refused.text, /b-->c/);
+  // Built on top of it, the retry goes through.
+  const saved = await run("update_diagram", { id, source: "flowchart LR\n a-->b-->c-->d" });
+  assert.equal(saved.isError, undefined);
+
+  // A different agent session that never read it is refused too.
+  assert.equal((await run("update_diagram", { id, source: "flowchart LR\n z" }, "s2")).isError, true);
+
+  // Feedback after a human edit routes to the last agent writer.
+  const d = await store.addHumanRevision(id, "flowchart LR\n a-->b-->c-->d-->e", 3);
+  assert.equal(store.lastAgentSession(d), "s1");
+});

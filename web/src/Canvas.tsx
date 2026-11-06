@@ -17,11 +17,13 @@ type Props = {
   onFocusPin: (fid: string) => void;
   onComment: (nodeId: string, label: string, text: string) => Promise<void>;
   onSvg: (svg: SVGSVGElement | null) => void;
+  /** false: a preview. No pins, no comments, nodes aren't buttons. */
+  interactive?: boolean;
 };
 
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
 
-export function Canvas({ fitKey, source, baseSource, head, feedback, focusNode, onFocusPin, onComment, onSvg }: Props) {
+export function Canvas({ fitKey, source, baseSource, head, feedback, focusNode, onFocusPin, onComment, onSvg, interactive = true }: Props) {
   const vp = useRef<HTMLDivElement>(null);
   const host = useRef<HTMLDivElement>(null);
   const [svg, setSvg] = useState<string | null>(null);
@@ -31,6 +33,9 @@ export function Canvas({ fitKey, source, baseSource, head, feedback, focusNode, 
   const [changes, setChanges] = useState<Changes>(null);
   const [composer, setComposer] = useState<{ nodeId: string; label: string; box: Box } | null>(null);
   const moved = useRef(false);
+  // Callers pass inline callbacks; keep them out of effect deps so a re-render never re-injects the SVG.
+  const onSvgRef = useRef(onSvg);
+  onSvgRef.current = onSvg;
   const tRef = useRef(t);
   tRef.current = t;
 
@@ -67,7 +72,8 @@ export function Canvas({ fitKey, source, baseSource, head, feedback, focusNode, 
     const vb = el.viewBox.baseVal;
     Object.assign(el.style, { width: `${vb.width}px`, height: `${vb.height}px`, maxWidth: "none" });
     splitLabels(h);
-    h.querySelectorAll("g.node").forEach((g) => {
+    h.classList.toggle("is-preview", !interactive);
+    if (interactive) h.querySelectorAll("g.node").forEach((g) => {
       g.setAttribute("tabindex", "0");
       g.setAttribute("role", "button");
       g.setAttribute("aria-label", `Comment on ${labelOf(g)}`);
@@ -80,10 +86,10 @@ export function Canvas({ fitKey, source, baseSource, head, feedback, focusNode, 
       m.set(nodeIdOf(g), { x: (r.left - hr.left) / scale, y: (r.top - hr.top) / scale, w: r.width / scale, h: r.height / scale });
     });
     setBoxes(m);
-    onSvg(el);
+    onSvgRef.current(el);
     if (!moved.current) fit();
-    return () => onSvg(null);
-  }, [svg, fit, onSvg]);
+    return () => onSvgRef.current(null);
+  }, [svg, fit, interactive]);
 
   useEffect(() => {
     const h = host.current;
@@ -160,17 +166,17 @@ export function Canvas({ fitKey, source, baseSource, head, feedback, focusNode, 
     const d = drag.current;
     drag.current = null;
     if (!d || d.dragging) return;
-    const g = (e.target as Element).closest("g.node");
+    const g = interactive && (e.target as Element).closest("g.node");
     if (g) openComposer(g);
     else setComposer(null);
   };
   const onKeyDown = (e: React.KeyboardEvent) => {
-    const g = (e.target as Element).closest?.("g.node");
+    const g = interactive && (e.target as Element).closest?.("g.node");
     if (g && (e.key === "Enter" || e.key === " ")) (e.preventDefault(), openComposer(g));
     if (e.key === "Escape") setComposer(null);
   };
 
-  const open = feedback.filter((f) => f.status === "open");
+  const open = interactive ? feedback.filter((f) => f.status === "open") : [];
   const pins = new Map<string, number[]>();
   open.forEach((f, i) => f.nodeId && boxes.has(f.nodeId) && pins.set(f.nodeId, [...(pins.get(f.nodeId) ?? []), i]));
 

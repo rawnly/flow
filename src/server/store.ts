@@ -14,6 +14,8 @@ export type Revision = {
 
 export type Feedback = {
   id: string;
+  /** "edit": the human edited the diagram and asks the agent to adjust around it. */
+  kind?: "comment" | "edit";
   nodeId: string | null;
   nodeLabel?: string;
   text: string;
@@ -152,7 +154,26 @@ export const addRevision = (id: string, source: string, author: string, note?: s
     if (title) d.title = title;
   });
 
-export const addFeedback = (id: string, f: Pick<Feedback, "nodeId" | "nodeLabel" | "text" | "revision">) => {
+export const HUMAN = "you";
+
+/** The session that last wrote a revision: who should handle feedback, including after human edits. */
+export const lastAgentSession = (d: Diagram) => d.revisions.findLast((r) => r.session)?.session;
+
+export class ConflictError extends Error {
+  constructor(public latest: Revision) {
+    super(`Revision ${latest.n} was saved by ${latest.author} while you were editing.`);
+  }
+}
+
+/** A human edit from the viewer. Refuses (ConflictError) if someone saved after `base`, unless forced. */
+export const addHumanRevision = (id: string, source: string, base: number, note?: string, force = false) =>
+  mutate(id, (d) => {
+    const latest = d.revisions.at(-1)!;
+    if (latest.n !== base && !force) throw new ConflictError(latest);
+    d.revisions.push({ n: latest.n + 1, source, note, author: HUMAN, createdAt: new Date().toISOString() });
+  });
+
+export const addFeedback = (id: string, f: Pick<Feedback, "nodeId" | "nodeLabel" | "text" | "revision" | "kind">) => {
   let created!: Feedback;
   return mutate(id, (d) => {
     created = { ...f, id: randomUUID().slice(0, 8), status: "open", createdAt: new Date().toISOString() };

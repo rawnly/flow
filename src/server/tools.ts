@@ -11,6 +11,15 @@ export type FlowTool = {
   run: (args: any, author: string, session?: string) => Promise<ToolResult>;
 };
 
+// Latest revision each agent session has seen per diagram, so update_diagram never silently
+// replaces a human (or other agent) revision the agent hasn't read.
+const seenRev = new Map<string, number>();
+const seenKey = (session: string | undefined, id: string) => `${session ?? "-"}:${id}`;
+export const markSeen = (session: string | undefined, id: string, n: number) => {
+  const k = seenKey(session, id);
+  seenRev.set(k, Math.max(n, seenRev.get(k) ?? 0));
+};
+
 const ok = (text: string, diagramId?: string): ToolResult => ({ text, diagramId });
 const fail = (text: string): ToolResult => ({ text, isError: true });
 
@@ -29,10 +38,16 @@ export const formatFeedback = (items: Diagram["feedback"]) =>
     .map(
       (f) =>
         `- [${f.id}] ${f.status === "open" ? "OPEN" : `resolved in r${f.resolvedIn}`} · ${
-          f.nodeId ? `node "${f.nodeId}"${f.nodeLabel ? ` (${f.nodeLabel})` : ""}` : "whole diagram"
+          f.kind === "edit"
+            ? `the user edited the diagram themselves in r${f.revision} and asks you to adjust around it`
+            : f.nodeId
+              ? `node "${f.nodeId}"${f.nodeLabel ? ` (${f.nodeLabel})` : ""}`
+              : "whole diagram"
         } · on r${f.revision}\n  ${f.text.replace(/\n/g, "\n  ")}`,
     )
     .join("\n");
+
+export const sourceBlock = (source: string) => "```mermaid\n" + source.trimEnd() + "\n```";
 
 export const tools: FlowTool[] = [
   {
@@ -47,12 +62,13 @@ export const tools: FlowTool[] = [
       const err = await validateMermaid(source);
       if (err) return fail(`Mermaid did not parse, nothing was saved:\n${err}`);
       const d = await createDiagram(title, source, author, note, session);
+      markSeen(session, d.id, 1);
       return ok(`Created. ${summary(d)}`, d.id);
     },
   },
   {
     name: "update_diagram",
-    description: `Save a new revision of a diagram (full source, not a patch). Call get_feedback first and address open items; then resolve_feedback for each one this revision fixes. ${STYLE_HINT}`,
+    description: `Save a new revision of a diagram (full source, not a patch). Call get_feedback first and address open items; then resolve_feedback for each one this revision fixes. The human can also edit the diagram in the viewer: if a newer revision exists than the one you last saw, the update is refused and returns the current source; build on it, never revert their edits. ${STYLE_HINT}`,
     shape: {
       id: z.string().describe("Diagram id"),
       source: z.string().min(1).max(200_000).describe("Complete Mermaid source for the new revision"),
@@ -62,10 +78,22 @@ export const tools: FlowTool[] = [
     async run({ id, source, note, title }, author, session) {
       const prev = await getDiagram(id);
       if (!prev) return fail(`No diagram with id "${id}". Call list_diagrams.`);
-      if (prev.revisions.at(-1)!.source === source && !title) return fail("Source is identical to the latest revision; nothing saved.");
+      const latest = prev.revisions.at(-1)!;
+      const known = seenRev.get(seenKey(session, id)) ?? 0;
+      if (latest.n > known) {
+        markSeen(session, id, latest.n); // the retry, built on this source, goes through
+        return fail(
+          `Not saved: revision r${latest.n} was written by ${latest.author}${latest.note ? ` ("${latest.note}")` : ""} after the last revision you saw${
+            known ? ` (r${known})` : ""
+          }. Keep their changes. Current source:\n${sourceBlock(latest.source)}\nApply your change on top of this source and call update_diagram again.`,
+        );
+      }
+      if (latest.source === source && !title) return fail("Source is identical to the latest revision; nothing saved.");
       const err = await validateMermaid(source);
       if (err) return fail(`Mermaid did not parse, nothing was saved:\n${err}`);
-      return ok(`Saved. ${summary(await addRevision(id, source, author, note, title, session))}`, id);
+      const d = await addRevision(id, source, author, note, title, session);
+      markSeen(session, id, d.revisions.at(-1)!.n);
+      return ok(`Saved. ${summary(d)}`, id);
     },
   },
   {
@@ -81,25 +109,29 @@ export const tools: FlowTool[] = [
     name: "get_diagram",
     description: "Get a diagram's Mermaid source (latest, or a given revision) plus revision history.",
     shape: { id: z.string(), revision: z.number().int().positive().optional() },
-    async run({ id, revision }) {
+    async run({ id, revision }, _author, session) {
       const d = await getDiagram(id);
       if (!d) return fail(`No diagram with id "${id}".`);
+      markSeen(session, id, d.revisions.at(-1)!.n);
       const r = revision ? d.revisions.find((x) => x.n === revision) : d.revisions.at(-1);
       if (!r) return fail(`Revision ${revision} does not exist; latest is ${d.revisions.at(-1)!.n}.`);
-      const history = d.revisions.map((x) => `r${x.n}${x.note ? `: ${x.note}` : ""}`).join("\n");
-      return ok(`${summary(d)}\n\nRevision ${r.n} source:\n\`\`\`mermaid\n${r.source}\n\`\`\`\n\nHistory:\n${history}`, id);
+      const history = d.revisions.map((x) => `r${x.n} by ${x.author}${x.note ? `: ${x.note}` : ""}`).join("\n");
+      return ok(`${summary(d)}\n\nRevision ${r.n} source:\n${sourceBlock(r.source)}\n\nHistory:\n${history}`, id);
     },
   },
   {
     name: "get_feedback",
     description: "Read the human's feedback on a diagram. Each item is anchored to a node id (or the whole diagram).",
     shape: { id: z.string(), includeResolved: z.boolean().optional() },
-    async run({ id, includeResolved }) {
+    async run({ id, includeResolved }, _author, session) {
       const d = await getDiagram(id);
       if (!d) return fail(`No diagram with id "${id}".`);
       const items = includeResolved ? d.feedback : openFeedback(d);
       if (!items.length) return ok(`No ${includeResolved ? "" : "open "}feedback on "${d.title}".`, id);
-      return ok(formatFeedback(items), id);
+      const latest = d.revisions.at(-1)!;
+      if (!items.some((f) => f.kind === "edit")) return ok(formatFeedback(items), id);
+      markSeen(session, id, latest.n);
+      return ok(`${formatFeedback(items)}\n\nCurrent source (r${latest.n}, by ${latest.author}):\n${sourceBlock(latest.source)}`, id);
     },
   },
   {

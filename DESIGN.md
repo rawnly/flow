@@ -30,5 +30,8 @@ Three columns: 248px rail, fluid canvas, 344px panel. 56px bars everywhere. At â
 ## Motion
 One ease, `cubic-bezier(.16,1,.3,1)`. Popovers scale in from 97%, focus dimming fades in 250ms. Reduced motion disables all of it.
 
+## Editor
+Source left (panel ground, mono 13/1.7, line gutter), live preview right using the same canvas in read-only mode. A save bar rises from the bottom only when the draft differs: note field, coral "ask the agent" checkbox (coral = a human request to the agent), Discard, primary Save. Conflicts show as an amber inline alert above the bar, never a modal.
+
 ## Signature
 Automatic change highlighting: each render diffs node ids, labels and edges against the previous revision, paints what is new in blue and writes the caption ("Highlighted parts are new since r2 (1 node, 1 connection)").

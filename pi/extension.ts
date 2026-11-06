@@ -8,9 +8,9 @@ import { join } from "node:path";
 import { z } from "zod";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
-import { formatFeedback, tools } from "../src/server/tools.js";
+import { formatFeedback, markSeen, sourceBlock, tools } from "../src/server/tools.js";
 import { startHttp, stopHttp, viewerUrl } from "../src/server/http.js";
-import { diagramsDir, getDiagram, listDiagrams, type Feedback } from "../src/server/store.js";
+import { diagramsDir, getDiagram, lastAgentSession, listDiagrams, type Feedback } from "../src/server/store.js";
 
 const AUTHOR = "pi";
 const ENTRY = "flow-diagram"; // session entry remembering which diagrams this session owns
@@ -57,19 +57,23 @@ export default function (pi: ExtensionAPI) {
       if (!d) continue;
       const fresh = d.feedback.filter((f) => f.status === "open" && !seen.has(f.id));
       fresh.forEach((f) => seen.add(f.id));
-      // Several sessions may have touched this diagram; only the latest writer handles feedback.
-      const writer = d.revisions.at(-1)!.session;
+      // Several sessions may have touched this diagram; only the latest agent writer handles feedback.
+      const writer = lastAgentSession(d);
       if (writer && writer !== session) continue;
       open += d.feedback.filter((f) => f.status === "open").length;
       if (!fresh.length) continue;
+      const latest = d.revisions.at(-1)!;
+      const edited = fresh.some((f) => f.kind === "edit");
+      if (edited) markSeen(session, d.id, latest.n);
       pi.sendMessage<FeedbackDetails>(
         {
           customType: MSG,
           display: true,
           details: { id: d.id, title: d.title, items: fresh },
           content:
-            `The user left feedback in the Flow viewer on "${d.title}" (id: ${d.id}, latest r${d.revisions.at(-1)!.n}):\n` +
+            `The user left feedback in the Flow viewer on "${d.title}" (id: ${d.id}, latest r${latest.n} by ${latest.author}):\n` +
             `${formatFeedback(fresh)}\n\n` +
+            (edited ? `Current source (keep the user's edits):\n${sourceBlock(latest.source)}\n\n` : "") +
             `Address it with update_diagram, then call resolve_feedback for each item you fixed (with a short reply).`,
         },
         { triggerTurn: true, deliverAs: "steer" },
@@ -147,7 +151,7 @@ export default function (pi: ExtensionAPI) {
     const d = message.details;
     if (!d) return new Text(String(message.content), options.outputPad, 0);
     const head = theme.fg("warning", "◆ ") + theme.bold(`Feedback on ${d.title}`) + theme.fg("dim", ` · ${d.items.length} from the Flow viewer`);
-    const lines = d.items.map((f) => `  ${theme.fg("accent", f.nodeLabel ?? f.nodeId ?? "Whole diagram")}  ${f.text}`);
+    const lines = d.items.map((f) => `  ${theme.fg("accent", f.nodeLabel ?? f.nodeId ?? "Whole diagram")}  ${f.kind === "edit" ? theme.fg("dim", f.text) : f.text}`);
     return new Text([head, ...lines].join("\n"), options.outputPad, 0);
   });
 

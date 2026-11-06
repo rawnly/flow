@@ -100,6 +100,8 @@ export function renderSvg(source: string): Promise<string> {
     p = mermaid.render(`flow-m${++seq}`, withSubtitles(source)).then((r) => r.svg);
     p.catch(() => cache.delete(source));
     cache.set(source, p);
+    // Live preview renders on every pause in typing; keep the cache bounded.
+    if (cache.size > 60) cache.delete(cache.keys().next().value!);
   }
   return p;
 }

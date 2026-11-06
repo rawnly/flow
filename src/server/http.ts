@@ -3,7 +3,10 @@ import { createReadStream, watch, type FSWatcher } from "node:fs";
 import { mkdir, stat } from "node:fs/promises";
 import { extname, join, normalize, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { validateMermaid } from "./validate.js";
 import {
+  ConflictError,
+  addHumanRevision,
   flowDir,
   addFeedback,
   deleteFeedback,
@@ -40,12 +43,12 @@ const json = (res: ServerResponse, code: number, body: unknown) => {
   res.end(JSON.stringify(body));
 };
 
-async function readJson(req: IncomingMessage): Promise<any> {
+async function readJson(req: IncomingMessage, limit = 64_000): Promise<any> {
   let size = 0;
   const chunks: Buffer[] = [];
   for await (const c of req) {
     size += c.length;
-    if (size > 64_000) throw new HttpError(413, "Body too large");
+    if (size > limit) throw new HttpError(413, "Body too large");
     chunks.push(c);
   }
   try {
@@ -123,6 +126,33 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
   if (!sub && req.method === "GET") {
     const d = await getDiagram(id);
     return d ? json(res, 200, d) : json(res, 404, { error: "Not found" });
+  }
+
+  if (sub === "revisions" && req.method === "POST") {
+    const b = await readJson(req, 400_000);
+    if (typeof b.source !== "string" || !b.source.trim() || b.source.length > 200_000) throw new HttpError(400, "source must be 1–200000 characters");
+    if (!Number.isInteger(b.base)) throw new HttpError(400, "base must be the revision number you edited");
+    const note = typeof b.note === "string" && b.note.trim() ? b.note.trim().slice(0, 500) : undefined;
+    const ask = typeof b.askAgent === "string" ? b.askAgent.trim().slice(0, 4000) : b.askAgent === true ? "" : null;
+    const err = await validateMermaid(b.source);
+    if (err) return json(res, 422, { error: "Mermaid did not parse", detail: err });
+    let d;
+    try {
+      d = await addHumanRevision(id, b.source, b.base, note, b.force === true);
+    } catch (e) {
+      if (e instanceof ConflictError) return json(res, 409, { error: e.message, latest: e.latest });
+      throw e;
+    }
+    const n = d.revisions.at(-1)!.n;
+    if (ask !== null)
+      await addFeedback(id, {
+        kind: "edit",
+        nodeId: null,
+        nodeLabel: `Your edit in r${n}`,
+        revision: n,
+        text: ask || "Review my edit and adjust the rest of the diagram around it: keep my changes, make naming, connections and layout consistent with them, and fix anything my edit broke.",
+      });
+    return json(res, 201, await getDiagram(id));
   }
 
   if (sub === "feedback" && !fid && req.method === "POST") {
