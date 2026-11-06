@@ -176,7 +176,7 @@ export function Canvas({ fitKey, source, baseSource, head, feedback, focusNode, 
     if (e.key === "Escape") setComposer(null);
   };
 
-  const open = interactive ? feedback.filter((f) => f.status === "open") : [];
+  const open = interactive ? feedback.filter((f) => f.status !== "resolved") : [];
   const pins = new Map<string, number[]>();
   open.forEach((f, i) => f.nodeId && boxes.has(f.nodeId) && pins.set(f.nodeId, [...(pins.get(f.nodeId) ?? []), i]));
 
@@ -276,8 +276,8 @@ function Composer({ label, style, onCancel, onSubmit }: { label: string; style: 
       />
       {err && <p className="composer-err">{err}</p>}
       <div className="composer-foot">
-        <span className="hint"><kbd>⌘</kbd><kbd>↵</kbd> to send</span>
-        <button className="btn btn-coral" disabled={!text.trim() || busy}>{busy ? "Sending…" : "Send to agent"}</button>
+        <span className="hint"><kbd>⌘</kbd><kbd>↵</kbd> to add</span>
+        <button className="btn btn-coral" disabled={!text.trim() || busy}>{busy ? "Adding…" : "Add comment"}</button>
       </div>
     </form>
   );

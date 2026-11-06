@@ -164,7 +164,16 @@ export function App() {
   };
 
   const comment = (nodeId: string | null, nodeLabel: string | undefined, text: string) =>
-    mutateFeedback(() => api.addFeedback(d!.id, { nodeId, nodeLabel, text, revision: rev!.n }), "Sent. The agent sees it on its next get_feedback.");
+    mutateFeedback(() => api.addDraft(d!.id, { nodeId, nodeLabel, text, revision: rev!.n }), "Added to your review. Send it when you're done.");
+
+  // Like submitting a PR review: drafts (plus an optional overall note) reach the agent in one batch.
+  const sendReview = (text: string) => {
+    const n = d!.feedback.filter((f) => f.status === "draft").length + (text ? 1 : 0);
+    return mutateFeedback(async () => {
+      if (text) await api.addDraft(d!.id, { nodeId: null, text, revision: rev!.n });
+      await api.submit(d!.id);
+    }, `Sent ${n} comment${n === 1 ? "" : "s"} to the agent`);
+  };
 
   return (
     <div className={`app${d && rev ? "" : " no-panel"}`}>
@@ -261,7 +270,9 @@ export function App() {
               }}
               onResolve={(f) => mutateFeedback(() => api.setFeedback(d.id, f.id, f.status === "open" ? "resolved" : "open"), f.status === "open" ? "Marked resolved" : "Reopened")}
               onDelete={(f) => mutateFeedback(() => api.deleteFeedback(d.id, f.id), "Feedback deleted")}
-              onComment={(text) => comment(null, undefined, text)}
+              onComment={sendReview}
+              approved={(d.approved ?? 0) >= latest!.n}
+              onApprove={() => mutateFeedback(() => api.approve(d.id, latest!.n), `Approved r${latest!.n}. The agent carries on.`)}
             />
           ) : (
             <HistoryPanel revisions={d.revisions} current={rev.n} latest={latest!.n} onPick={(n) => setViewN(n === latest!.n ? null : n)} />
@@ -415,14 +426,15 @@ function ChangesView({ revisions, rev }: { revisions: Revision[]; rev: Revision 
   );
 }
 
-function FeedbackPanel({ items, focusFid, onFocus, onResolve, onDelete, onComment }: { items: Feedback[]; focusFid: string | null; onFocus: (fid: string | null) => void; onResolve: (f: Feedback) => Promise<void>; onDelete: (f: Feedback) => Promise<void>; onComment: (text: string) => Promise<void> }) {
-  const open = items.filter((f) => f.status === "open");
+function FeedbackPanel({ items, focusFid, onFocus, onResolve, onDelete, onComment, approved, onApprove }: { items: Feedback[]; focusFid: string | null; onFocus: (fid: string | null) => void; onResolve: (f: Feedback) => Promise<void>; onDelete: (f: Feedback) => Promise<void>; onComment: (text: string) => Promise<void>; approved: boolean; onApprove: () => Promise<void> }) {
+  const open = items.filter((f) => f.status !== "resolved");
+  const drafts = open.filter((f) => f.status === "draft").length;
   const done = items.filter((f) => f.status === "resolved").reverse();
   const [showDone, setShowDone] = useState(false);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const send = async () => {
-    if (!text.trim() || busy) return;
+    if ((!text.trim() && !drafts) || busy) return;
     setBusy(true);
     try {
       await onComment(text.trim());
@@ -437,7 +449,7 @@ function FeedbackPanel({ items, focusFid, onFocus, onResolve, onDelete, onCommen
         {!open.length && (
           <div className="empty">
             <Icon.comment />
-            <p><strong>No open feedback.</strong> Click any node in the diagram to tell the agent what to change there.</p>
+            <p><strong>No open feedback.</strong> Click any node to comment, then send your comments to the agent together.</p>
           </div>
         )}
         <ol className="fb-list">
@@ -462,12 +474,19 @@ function FeedbackPanel({ items, focusFid, onFocus, onResolve, onDelete, onCommen
         <textarea
           value={text}
           rows={2}
-          placeholder="Feedback on the whole diagram…"
+          placeholder={drafts ? "Overall note (optional)…" : "Feedback on the whole diagram…"}
           aria-label="Feedback on the whole diagram"
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && (e.metaKey || e.ctrlKey) && (e.preventDefault(), send())}
         />
-        <button className="icon-btn icon-btn-solid" disabled={!text.trim() || busy} aria-label="Send to agent"><Icon.send /></button>
+        {!drafts && !text.trim() && (
+          <button type="button" className="btn" disabled={approved || busy} onClick={() => onApprove().catch(() => {})} title="Tell the agent this revision is good">
+            <Icon.check /> {approved ? "Approved" : "Looks good"}
+          </button>
+        )}
+        <button className="btn btn-coral" disabled={(!text.trim() && !drafts) || busy}>
+          <Icon.send /> Send{drafts ? ` ${drafts + (text.trim() ? 1 : 0)}` : ""} to agent
+        </button>
       </form>
     </div>
   );
@@ -485,6 +504,7 @@ function FeedbackItem({ f, n, active, onFocus, onResolve, onDelete }: { f: Feedb
         <span className="fb-head">
           <span className={`fb-pin${resolved ? " is-done" : ""}`}>{resolved ? <Icon.check /> : n}</span>
           <span className="fb-node">{f.nodeLabel ?? (f.nodeId ? f.nodeId : "Whole diagram")}</span>
+          {f.status === "draft" && <span className="tag">Draft</span>}
           <span className="fb-time">{ago(f.createdAt)} · r{f.revision}</span>
         </span>
         <span className="fb-text">{f.text}</span>
@@ -496,9 +516,11 @@ function FeedbackItem({ f, n, active, onFocus, onResolve, onDelete }: { f: Feedb
         )}
       </button>
       <span className="fb-actions">
-        <button className="btn btn-quiet btn-sm" onClick={() => onResolve(f).catch(() => {})}>
-          {resolved ? <><Icon.undo /> Reopen</> : <><Icon.check /> Resolve</>}
-        </button>
+        {f.status !== "draft" && (
+          <button className="btn btn-quiet btn-sm" onClick={() => onResolve(f).catch(() => {})}>
+            {resolved ? <><Icon.undo /> Reopen</> : <><Icon.check /> Resolve</>}
+          </button>
+        )}
         <button className="icon-btn icon-btn-danger" onClick={() => onDelete(f).catch(() => {})} aria-label="Delete feedback"><Icon.trash /></button>
       </span>
     </li>

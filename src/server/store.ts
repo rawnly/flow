@@ -20,7 +20,8 @@ export type Feedback = {
   nodeLabel?: string;
   text: string;
   revision: number;
-  status: "open" | "resolved";
+  /** "draft": still being written in the viewer; agents only see it once the user sends the review. */
+  status: "draft" | "open" | "resolved";
   createdAt: string;
   resolvedIn?: number;
   reply?: string;
@@ -33,6 +34,8 @@ export type Diagram = {
   updatedAt: string;
   revisions: Revision[];
   feedback: Feedback[];
+  /** Latest revision the user marked "Looks good" in the viewer. */
+  approved?: number;
 };
 
 export const flowDir = () => resolve(process.env.FLOW_DIR ?? join(process.cwd(), ".flow"));
@@ -173,10 +176,10 @@ export const addHumanRevision = (id: string, source: string, base: number, note?
     d.revisions.push({ n: latest.n + 1, source, note, author: HUMAN, createdAt: new Date().toISOString() });
   });
 
-export const addFeedback = (id: string, f: Pick<Feedback, "nodeId" | "nodeLabel" | "text" | "revision" | "kind">) => {
+export const addFeedback = (id: string, f: Pick<Feedback, "nodeId" | "nodeLabel" | "text" | "revision" | "kind">, status: "draft" | "open" = "open") => {
   let created!: Feedback;
   return mutate(id, (d) => {
-    created = { ...f, id: randomUUID().slice(0, 8), status: "open", createdAt: new Date().toISOString() };
+    created = { ...f, id: randomUUID().slice(0, 8), status, createdAt: new Date().toISOString() };
     d.feedback.push(created);
   }).then(() => created);
 };
@@ -192,6 +195,17 @@ export const setFeedbackStatus = (id: string, fid: string, status: Feedback["sta
     } else {
       delete f.resolvedIn;
     }
+  });
+
+export const approve = (id: string, revision: number) =>
+  mutate(id, (d) => {
+    d.approved = Math.max(d.approved ?? 0, revision);
+  });
+
+/** Sends the review: every draft becomes open in one write, so agents get it as one batch. */
+export const submitDrafts = (id: string) =>
+  mutate(id, (d) => {
+    for (const f of d.feedback) if (f.status === "draft") f.status = "open";
   });
 
 export const deleteFeedback = (id: string, fid: string) =>

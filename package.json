@@ -46,6 +46,7 @@
     "dist",
     "src/server",
     "pi",
+    "skills",
     "!src/server/*.test.ts"
   ],
   "engines": {
@@ -60,6 +61,9 @@
   "pi": {
     "extensions": [
       "./pi/extension.ts"
+    ],
+    "skills": [
+      "./skills"
     ]
   },
   "license": "MIT",

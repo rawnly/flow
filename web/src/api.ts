@@ -10,8 +10,10 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   list: () => req<DiagramSummary[]>("/diagrams"),
   get: (id: string) => req<Diagram>(`/diagrams/${id}`),
-  addFeedback: (id: string, f: Pick<Feedback, "nodeId" | "nodeLabel" | "text" | "revision">) =>
-    req<Feedback>(`/diagrams/${id}/feedback`, { method: "POST", body: JSON.stringify(f) }),
+  addDraft: (id: string, f: Pick<Feedback, "nodeId" | "nodeLabel" | "text" | "revision">) =>
+    req<Feedback>(`/diagrams/${id}/feedback`, { method: "POST", body: JSON.stringify({ ...f, draft: true }) }),
+  approve: (id: string, revision: number) => req<Diagram>(`/diagrams/${id}/approve`, { method: "POST", body: JSON.stringify({ revision }) }),
+  submit: (id: string) => req<Diagram>(`/diagrams/${id}/submit`, { method: "POST" }),
   setFeedback: (id: string, fid: string, status: Feedback["status"]) =>
     req<Diagram>(`/diagrams/${id}/feedback/${fid}`, { method: "PATCH", body: JSON.stringify({ status }) }),
   deleteFeedback: (id: string, fid: string) => req<Diagram>(`/diagrams/${id}/feedback/${fid}`, { method: "DELETE" }),

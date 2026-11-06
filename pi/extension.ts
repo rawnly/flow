@@ -84,7 +84,8 @@ export default function (pi: ExtensionAPI) {
 
   async function startWatching() {
     await mkdir(diagramsDir(), { recursive: true });
-    for (const d of await listDiagrams()) d.feedback.forEach((f) => seen.add(f.id));
+    // Drafts aren't sent yet; leave them unseen so they're delivered once the user sends the review.
+    for (const d of await listDiagrams()) d.feedback.forEach((f) => f.status !== "draft" && seen.add(f.id));
     watcher = watch(diagramsDir(), (_e, name) => {
       if (!name?.endsWith(".json")) return;
       clearTimeout(debounce);

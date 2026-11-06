@@ -1,4 +1,4 @@
-import { diagramsDir, listDiagrams, type Diagram } from "./store.js";
+import { diagramsDir, getDiagram, listDiagrams, type Diagram } from "./store.js";
 import { stat, readdir } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -45,6 +45,37 @@ async function stamp(): Promise<number> {
   } catch {
     return 0;
   }
+}
+
+export type Review = { kind: "feedback"; report: string } | { kind: "approved"; revision: number } | { kind: "gone" };
+
+/**
+ * Waits, with no time limit, for the user to finish reviewing diagram `id` at revision `rev`: either they send
+ * new feedback (items that weren't open when we started) or press "Looks good" on rev or later.
+ */
+export async function waitForReview(id: string, rev: number, signal?: AbortSignal): Promise<Review> {
+  const start = await getDiagram(id);
+  if (!start) return { kind: "gone" };
+  const known = new Set(openFeedback(start).map((f) => f.id));
+  let last = -1;
+  while (!signal?.aborted) {
+    const s = await stamp();
+    if (s !== last) {
+      last = s;
+      const d = await getDiagram(id);
+      if (!d) return { kind: "gone" };
+      const fresh = openFeedback(d).filter((f) => !known.has(f.id));
+      if (fresh.length) {
+        const latest = d.revisions.at(-1)!;
+        let report = `The user reviewed "${d.title}" (id: ${d.id}) in the Flow viewer, latest r${latest.n}:\n${formatFeedback(fresh)}`;
+        if (fresh.some((f) => f.kind === "edit")) report += `\n\nCurrent source (r${latest.n}, by ${latest.author}; keep the user's edits):\n${sourceBlock(latest.source)}`;
+        return { kind: "feedback", report };
+      }
+      if ((d.approved ?? 0) >= rev) return { kind: "approved", revision: d.approved! };
+    }
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  return { kind: "gone" };
 }
 
 /** Resolves with the report as soon as open feedback exists, or null after `timeoutMs`. */

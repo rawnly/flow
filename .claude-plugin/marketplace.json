@@ -1,0 +1,12 @@
+{
+  "name": "flow",
+  "owner": { "name": "rawnly" },
+  "description": "Flow: a live Mermaid canvas for agents.",
+  "plugins": [
+    {
+      "name": "flow",
+      "source": "./",
+      "description": "A live canvas for agents: Claude draws Mermaid diagrams you watch render, comment on, and edit in the browser. Your comments go straight back to Claude."
+    }
+  ]
+}

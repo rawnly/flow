@@ -21,6 +21,33 @@ test("revisions, feedback, and id collisions", async () => {
   assert.equal((await store.listDiagrams()).length, 2);
 });
 
+test("drafts stay hidden until the review is sent", async () => {
+  const { pendingFeedbackReport } = await import("./feedback.js");
+  const d = await store.createDiagram("Drafts", "flowchart TD\n a-->b", "t");
+  await store.addFeedback(d.id, { nodeId: "a", text: "one", revision: 1 }, "draft");
+  await store.addFeedback(d.id, { nodeId: "b", text: "two", revision: 1 }, "draft");
+  assert.equal(await pendingFeedbackReport(d.id), null);
+  const sent = await store.submitDrafts(d.id);
+  assert.deepEqual(sent.feedback.map((f) => f.status), ["open", "open"]);
+  assert.match((await pendingFeedbackReport(d.id))!, /one[\s\S]*two/);
+});
+
+test("waitForReview: ignores feedback already open, returns new feedback or approval", async () => {
+  const { waitForReview } = await import("./feedback.js");
+  const d = await store.createDiagram("Review", "flowchart TD\n a-->b", "t");
+  await store.addFeedback(d.id, { nodeId: "a", text: "old", revision: 1 });
+  const fb = waitForReview(d.id, 1);
+  await new Promise((r) => setTimeout(r, 50));
+  await store.addFeedback(d.id, { nodeId: "b", text: "new", revision: 1 });
+  const r = await fb;
+  assert.equal(r.kind, "feedback");
+  assert.ok(r.kind === "feedback" && r.report.includes("new") && !r.report.includes("old"));
+
+  const ok = waitForReview(d.id, 1);
+  await store.approve(d.id, 1);
+  assert.deepEqual(await ok, { kind: "approved", revision: 1 });
+});
+
 test("rejects path-like ids", async () => {
   await assert.rejects(store.getDiagram("../etc"), /Invalid diagram id/);
 });

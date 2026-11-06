@@ -111,7 +111,7 @@ export const tools: FlowTool[] = [
     async run({ id, includeResolved }, _author, session) {
       const d = await getDiagram(id);
       if (!d) return fail(`No diagram with id "${id}".`);
-      const items = includeResolved ? d.feedback : openFeedback(d);
+      const items = includeResolved ? d.feedback.filter((f) => f.status !== "draft") : openFeedback(d);
       if (!items.length) return ok(`No ${includeResolved ? "" : "open "}feedback on "${d.title}".`, id);
       const latest = d.revisions.at(-1)!;
       if (!items.some((f) => f.kind === "edit")) return ok(formatFeedback(items), id);

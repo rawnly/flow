@@ -1,0 +1,63 @@
+{
+  "name": "flow",
+  "description": "A live canvas for agents: Claude draws Mermaid diagrams you watch render, comment on, and edit in the browser. Your comments go straight back to Claude.",
+  "author": {
+    "name": "rawnly"
+  },
+  "repository": "https://github.com/rawnly/flow",
+  "license": "MIT",
+  "keywords": [
+    "mermaid",
+    "diagrams",
+    "mcp",
+    "review"
+  ],
+  "mcpServers": {
+    "flow": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "-p",
+        "@rawnly/flow",
+        "flow-mcp"
+      ],
+      "env": {
+        "FLOW_AGENT_NAME": "claude"
+      }
+    }
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "mcp__.*flow.*__(create_diagram|update_diagram|resolve_feedback)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "npx -y -p @rawnly/flow flow-hook",
+            "timeout": 345600
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "npx -y -p @rawnly/flow flow-hook"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "npx -y -p @rawnly/flow flow-hook"
+          }
+        ]
+      }
+    ]
+  }
+}

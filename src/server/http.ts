@@ -15,6 +15,8 @@ import {
   isId,
   listDiagrams,
   setFeedbackStatus,
+  submitDrafts,
+  approve,
 } from "./store.js";
 
 const BASE_PORT = Number(process.env.FLOW_PORT ?? 4729);
@@ -162,7 +164,15 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     if (!Number.isInteger(b.revision)) throw new HttpError(400, "revision must be an integer");
     const nodeId = typeof b.nodeId === "string" && b.nodeId.length <= 200 ? b.nodeId : null;
     const nodeLabel = typeof b.nodeLabel === "string" ? b.nodeLabel.slice(0, 200) : undefined;
-    return json(res, 201, await addFeedback(id, { text, revision: b.revision, nodeId, nodeLabel }));
+    return json(res, 201, await addFeedback(id, { text, revision: b.revision, nodeId, nodeLabel }, b.draft === true ? "draft" : "open"));
+  }
+
+  if (sub === "submit" && req.method === "POST") return json(res, 200, await submitDrafts(id));
+
+  if (sub === "approve" && req.method === "POST") {
+    const b = await readJson(req);
+    if (!Number.isInteger(b.revision)) throw new HttpError(400, "revision must be an integer");
+    return json(res, 200, await approve(id, b.revision));
   }
 
   if (sub === "feedback" && fid && req.method === "PATCH") {

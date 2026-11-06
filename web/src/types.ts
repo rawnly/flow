@@ -5,10 +5,10 @@ export type Feedback = {
   nodeLabel?: string;
   text: string;
   revision: number;
-  status: "open" | "resolved";
+  status: "draft" | "open" | "resolved";
   createdAt: string;
   resolvedIn?: number;
   reply?: string;
 };
-export type Diagram = { id: string; title: string; createdAt: string; updatedAt: string; revisions: Revision[]; feedback: Feedback[] };
+export type Diagram = { id: string; title: string; createdAt: string; updatedAt: string; revisions: Revision[]; feedback: Feedback[]; approved?: number };
 export type DiagramSummary = { id: string; title: string; updatedAt: string; revision: number; openFeedback: number };
